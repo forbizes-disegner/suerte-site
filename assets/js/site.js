@@ -128,7 +128,11 @@ function tickClock() { var t = fmtTime(new Date()); clocks.forEach(function (el)
 if (clocks.length) { tickClock(); setInterval(tickClock, 30000); }
 function iso(d) { return d.getFullYear() + '-' + ('0' + (d.getMonth() + 1)).slice(-2) + '-' + ('0' + d.getDate()).slice(-2); }
 function nice(s, loc) { try { return new Intl.DateTimeFormat(loc, { day: 'numeric', month: 'short', year: 'numeric' }).format(new Date(s + 'T12:00:00')); } catch (e) { return s; } }
-function plural(n, one, many) { return n + ' ' + (n === 1 ? one : many); }
+function plural(n, one, many, few, loc) {
+var c = n === 1 ? 'one' : 'other';
+try { c = new Intl.PluralRules(loc || LOCALE).select(n); } catch (e) {}
+return n + ' ' + (c === 'one' ? one : (c === 'few' && few) ? few : many);
+}
 $$('[data-booking]').forEach(function (form) {
 var a = $('[name=arrive]', form), l = $('[name=leave]', form), g = $('[name=guests]', form);
 var go = $('[data-booking-go]', form), nightsEl = $('[data-nights]', form), started = false;
@@ -142,10 +146,10 @@ if (l.value <= a.value) { var d = new Date(a.value + 'T12:00:00'); d.setDate(d.g
 l.min = a.value;
 var nights = Math.max(1, Math.round((new Date(l.value + 'T12:00:00') - new Date(a.value + 'T12:00:00')) / 86400000));
 var guests = parseInt(g.value, 10) || 2;
-var n = plural(nights, T.night || 'night', T.nights || 'nights');
+var n = plural(nights, T.night || 'night', T.nights || 'nights', T.nights_few);
 if (nightsEl) nightsEl.textContent = n;
-var msg = fill(T.wa_msg, { from: nice(a.value, LOCALE), to: nice(l.value, LOCALE), n: n, g: plural(guests, T.guest || 'guest', T.guests || 'guests') });
-if (T.wa_en) msg += '\n\n' + fill(T.wa_en, { from: nice(a.value, 'en-GB'), to: nice(l.value, 'en-GB'), n: plural(nights, 'night', 'nights'), g: plural(guests, 'guest', 'guests') });
+var msg = fill(T.wa_msg, { from: nice(a.value, LOCALE), to: nice(l.value, LOCALE), n: n, g: plural(guests, T.guest || 'guest', T.guests || 'guests', T.guests_few) });
+if (T.wa_en) msg += '\n\n' + fill(T.wa_en, { from: nice(a.value, 'en-GB'), to: nice(l.value, 'en-GB'), n: plural(nights, 'night', 'nights', '', 'en'), g: plural(guests, 'guest', 'guests', '', 'en') });
 if (go) go.href = 'https://wa.me/' + C.wa + '?text=' + encodeURIComponent(msg);
 if (user && !started) { started = true; track('booking_start', { place: form.getAttribute('data-place') || 'page' }); }
 }
@@ -244,7 +248,7 @@ return r;
 function minutesOf(s) {
 var n = (String(s).match(/\d+/g) || []).map(Number);
 if (!n.length) return 60;
-if (n.length === 1 && /min|dk|λεπ/i.test(s)) return n[0];
+if (n.length === 1 && /min|dk|мин/i.test(s)) return n[0];
 return n[0] * 60 + (n[1] || 0);
 }
 function playRoute(r, mins) {
@@ -347,11 +351,25 @@ var first = map.getAttribute('data-open'); if (first) show(first);
 });
 var lb = $('#lightbox'), lbImg = lb && $('img', lb), lbCap = lb && $('[data-lb-cap]', lb), lbCount = lb && $('[data-lb-count]', lb);
 var items = [], cur = 0, lastFocus = null;
-function visibleItems() { return $$('.masonry button').filter(function (b) { return !b.hidden; }); }
+var zooms = lb ? $$('[data-zoom] .media').filter(function (m) { return m.querySelector('img'); }) : [];
+zooms.forEach(function (m) {
+var img = m.querySelector('img');
+m.classList.add('zoomable');
+m.setAttribute('role', 'button'); m.setAttribute('tabindex', '0');
+m.setAttribute('aria-label', (T.lb_open || 'Open photo') + ': ' + img.alt);
+m.setAttribute('data-cap', img.alt);
+m.setAttribute('data-full', img.getAttribute('src').replace(/-(sm|md)(\.\w+)$/, '$2'));
+m.addEventListener('click', function () { openLightbox(m); });
+m.addEventListener('keydown', function (e) { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); openLightbox(m); } });
+});
+function visibleItems(btn) {
+if (zooms.indexOf(btn) > -1) return zooms;
+return $$('.masonry button').filter(function (b) { return !b.hidden; });
+}
 function openLightbox(btn) {
 if (!lb) return;
-items = visibleItems(); cur = items.indexOf(btn); lastFocus = btn;
-render(); lb.hidden = false; document.body.style.overflow = 'hidden'; $('[data-lb-close]', lb).focus();
+items = visibleItems(btn); cur = items.indexOf(btn); lastFocus = btn;
+render(); lb.hidden = false; document.body.style.overflow = 'hidden'; doc.classList.add('lb-open'); $('[data-lb-close]', lb).focus();
 }
 var lbVid = lb && $('video', lb);
 function render() {
@@ -371,7 +389,7 @@ function stepLb(n) { cur = (cur + n + items.length) % items.length; render(); }
 function closeLightbox() {
 if (!lb || lb.hidden) return;
 if (lbVid) { lbVid.pause(); lbVid.removeAttribute('src'); }
-lb.hidden = true; document.body.style.overflow = ''; if (lastFocus) lastFocus.focus();
+lb.hidden = true; document.body.style.overflow = ''; doc.classList.remove('lb-open'); if (lastFocus) lastFocus.focus();
 }
 $$('.masonry button').forEach(function (b) { b.addEventListener('click', function () { openLightbox(b); }); });
 if (lb) {
@@ -395,7 +413,7 @@ e.preventDefault();
 var name = $('#cf-name').value.trim(), email = $('#cf-email').value.trim(), topic = $('#cf-topic').value, msg = $('#cf-msg').value.trim();
 if (!name || !msg) { $('#cf-error').hidden = false; return; }
 $('#cf-error').hidden = true;
-var text = 'Hello Mustafa, this is ' + name + (email ? ' (' + email + ')' : '') + '. ' + topic + ': ' + msg;
+var text = fill(T.cf_hello || 'Hello Mustafa, this is {name}. {topic}: {msg}', { name: name + (email ? ' (' + email + ')' : ''), topic: topic, msg: msg });
 $('#cf-wa').href = 'https://wa.me/' + C.wa + '?text=' + encodeURIComponent(text);
 $('#cf-mail').href = 'mailto:info@suertevillagecyprus.com?subject=' + encodeURIComponent(topic + ' — ' + name) + '&body=' + encodeURIComponent(msg + '\n\n' + name + (email ? '\n' + email : ''));
 var r = $('#cf-result'); r.hidden = false; r.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
@@ -404,7 +422,7 @@ var r = $('#cf-result'); r.hidden = false; r.scrollIntoView({ behavior: 'smooth'
 $$('[data-copy]').forEach(function (b) {
 b.addEventListener('click', function () {
 var text = b.getAttribute('data-copy'), label = b.textContent;
-function done(ok) { b.textContent = ok ? 'Copied' : 'Select and copy'; setTimeout(function () { b.textContent = label; }, 1600); }
+function done(ok) { b.textContent = ok ? (T.copied || 'Copied') : (T.copy_fail || 'Select and copy'); setTimeout(function () { b.textContent = label; }, 1600); }
 if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(text).then(function () { done(true); }, function () { done(false); });
 else done(false);
 });
@@ -618,90 +636,6 @@ $$('h2', c).forEach(function (h) { splitWords(h, 'w'); });
 c.classList.add('cta-anim'); ctaIO.observe(c);
 });
 }
-(function galleryIn() {
-var mas = $('.masonry');
-if (!mas || reduceMotion || !('IntersectionObserver' in window)) return;
-var gio = new IntersectionObserver(function (es) {
-es.forEach(function (en) { if (en.isIntersecting) { en.target.classList.add('seen'); gio.unobserve(en.target); } });
-}, { rootMargin: '0px 0px -6% 0px' });
-$$('.masonry > button').forEach(function (b, i) { b.style.setProperty('--gi', String(i % 3)); gio.observe(b); });
-mas.classList.add('g-anim');
-})();
-(function heroSea() {
-var hero = $('.hero-v');
-if (!hero || !window.matchMedia('(min-width: 900px)').matches) return;
-var canvas = document.createElement('canvas');
-canvas.className = 'hero-sea'; canvas.setAttribute('aria-hidden', 'true');
-var gl = null;
-try { gl = canvas.getContext('webgl', { alpha: true, antialias: false, depth: false, powerPreference: 'low-power' }); } catch (e) { gl = null; }
-if (!gl) return;
-hero.insertBefore(canvas, $('.wrap', hero));
-var VS = [
-'attribute vec2 a_uv;',
-'uniform float u_t, u_aspect, u_dpr, u_cam, u_sun;',
-'varying float v_depth, v_glow;',
-'void main() {',
-'  float z = mix(2.0, 46.0, a_uv.y * a_uv.y);',
-'  float x = (a_uv.x - 0.5) * (z * 3.4 + 2.0);',
-'  float y = 0.45 * sin(x * 0.32 + u_t * 0.55 + z * 0.21) + 0.30 * sin(z * 0.47 - u_t * 0.8) + 0.22 * sin((x - z) * 0.18 + u_t * 0.35);',
-'  vec3 p = vec3(x - u_cam * 2.2, y - 2.6, z);',
-'  vec2 s = vec2(p.x * 1.9 / (p.z * u_aspect), p.y * 1.9 / p.z + 0.9);',
-'  gl_Position = vec4(s, 0.0, 1.0);',
-'  gl_PointSize = clamp(13.0 / p.z, 1.0, 4.2) * u_dpr;',
-'  v_depth = clamp((z - 2.0) / 44.0, 0.0, 1.0);',
-'  v_glow = exp(-pow((s.x - u_sun) * 2.4, 2.0)) * (1.0 - v_depth * 0.45);',
-'}'].join('\n');
-var FS = [
-'precision mediump float;',
-'varying float v_depth, v_glow;',
-'void main() {',
-'  vec2 c = gl_PointCoord - 0.5; float d = dot(c, c);',
-'  if (d > 0.25) discard;',
-'  vec3 col = mix(mix(vec3(0.93, 0.90, 0.84), vec3(0.42, 0.39, 0.33), v_depth), vec3(1.0, 0.72, 0.32), clamp(v_glow, 0.0, 1.0));',
-'  float a = (1.0 - d * 4.0) * (0.13 + 0.55 * v_glow) * (1.0 - v_depth * 0.55);',
-'  gl_FragColor = vec4(col * a, a);',
-'}'].join('\n');
-function sh(type, src) { var s = gl.createShader(type); gl.shaderSource(s, src); gl.compileShader(s); return gl.getShaderParameter(s, gl.COMPILE_STATUS) ? s : null; }
-var vs = sh(gl.VERTEX_SHADER, VS), fs = sh(gl.FRAGMENT_SHADER, FS);
-if (!vs || !fs) { canvas.remove(); return; }
-var prog = gl.createProgram(); gl.attachShader(prog, vs); gl.attachShader(prog, fs); gl.linkProgram(prog);
-if (!gl.getProgramParameter(prog, gl.LINK_STATUS)) { canvas.remove(); return; }
-gl.useProgram(prog);
-var COLS = 150, ROWS = 64, uv = new Float32Array(COLS * ROWS * 2), k = 0;
-for (var j = 0; j < ROWS; j++) for (var i = 0; i < COLS; i++) { uv[k++] = i / (COLS - 1); uv[k++] = j / (ROWS - 1); }
-var buf = gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER, buf); gl.bufferData(gl.ARRAY_BUFFER, uv, gl.STATIC_DRAW);
-var loc = gl.getAttribLocation(prog, 'a_uv'); gl.enableVertexAttribArray(loc); gl.vertexAttribPointer(loc, 2, gl.FLOAT, false, 0, 0);
-var U = {}; ['u_t', 'u_aspect', 'u_dpr', 'u_cam', 'u_sun'].forEach(function (n) { U[n] = gl.getUniformLocation(prog, n); });
-gl.enable(gl.BLEND); gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA); gl.clearColor(0, 0, 0, 0);
-var dpr = Math.min(window.devicePixelRatio || 1, 2), cam = 0, camTo = 0;
-function resize() {
-var w = canvas.clientWidth, h = canvas.clientHeight;
-if (!w || !h) return;
-canvas.width = Math.round(w * dpr); canvas.height = Math.round(h * dpr);
-gl.viewport(0, 0, canvas.width, canvas.height);
-gl.uniform1f(U.u_aspect, w / h); gl.uniform1f(U.u_dpr, dpr);
-gl.uniform1f(U.u_sun, 0.5);
-}
-function draw(t) {
-cam += (camTo - cam) * 0.04;
-gl.uniform1f(U.u_t, t); gl.uniform1f(U.u_cam, cam);
-gl.clear(gl.COLOR_BUFFER_BIT); gl.drawArrays(gl.POINTS, 0, COLS * ROWS);
-}
-resize();
-window.addEventListener('resize', function () { resize(); if (reduceMotion) draw(12); });
-canvas.classList.add('on');
-if (reduceMotion) { draw(12); return; }
-hero.addEventListener('pointermove', function (e) { camTo = (e.clientX / window.innerWidth - 0.5); });
-var running = false, inView = true, t0 = performance.now();
-function frame(now) { if (!running) return; draw((now - t0) / 1000); requestAnimationFrame(frame); }
-function update() {
-var on = inView && !document.hidden;
-if (on && !running) { running = true; requestAnimationFrame(frame); } else if (!on) running = false;
-}
-if ('IntersectionObserver' in window) new IntersectionObserver(function (es) { inView = es[0].isIntersecting; update(); }).observe(hero);
-document.addEventListener('visibilitychange', update);
-update();
-})();
 if (finePointer && !reduceMotion) {
 $$('.escape, .bento > *, .review, .card > .media, .split .media, .moment .media').forEach(function (card) {
 var r = null;
@@ -713,21 +647,6 @@ card.style.setProperty('--try', (x * 7).toFixed(2) + 'deg');
 card.style.setProperty('--trx', (-y * 6).toFixed(2) + 'deg');
 });
 card.addEventListener('pointerleave', function () { r = null; card.style.removeProperty('--trx'); card.style.removeProperty('--try'); });
-});
-}
-if (finePointer && !reduceMotion) {
-var bubble = document.createElement('div');
-bubble.className = 'cursor-bubble'; bubble.setAttribute('aria-hidden', 'true');
-document.body.appendChild(bubble);
-var bx = 0, by = 0, braf = 0;
-function moveBubble() { braf = 0; bubble.style.transform = 'translate3d(' + bx + 'px,' + by + 'px,0)'; }
-$$('.bento a.media, .carousel .media, .masonry button').forEach(function (t) {
-t.addEventListener('pointerenter', function (e) {
-bubble.textContent = t.querySelector('video') ? (T.watch || 'Watch') : (T.view || 'View');
-bx = e.clientX; by = e.clientY; moveBubble(); bubble.classList.add('on');
-});
-t.addEventListener('pointermove', function (e) { bx = e.clientX; by = e.clientY; if (!braf) braf = requestAnimationFrame(moveBubble); });
-t.addEventListener('pointerleave', function () { bubble.classList.remove('on'); });
 });
 }
 })();
