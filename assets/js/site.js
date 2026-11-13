@@ -339,15 +339,6 @@ function set(on) { fig.classList.toggle('show-plot', on); b.setAttribute('aria-p
 b.addEventListener('click', function () { set(b.getAttribute('aria-pressed') !== 'true'); });
 set(b.getAttribute('aria-pressed') === 'true');
 });
-$$('[data-carousel]').forEach(function (wrap) {
-var track_ = $('.carousel', wrap);
-$$('[data-dir]', wrap).forEach(function (b) {
-b.addEventListener('click', function () {
-var stepW = track_.firstElementChild ? track_.firstElementChild.getBoundingClientRect().width + 18 : 300;
-track_.scrollBy({ left: stepW * Number(b.getAttribute('data-dir')), behavior: reduceMotion ? 'auto' : 'smooth' });
-});
-});
-});
 var saveData = navigator.connection && navigator.connection.saveData;
 var vids = $$('video[data-loop]');
 if (reduceMotion || saveData) {
@@ -500,7 +491,7 @@ if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.wr
 else done(false);
 });
 });
-var STAGGER = '.pfacts, .escapes, .promise, .rules, .points, .faq, .chips, .reviews, .score-row, .cards, .bento, .guide-grid, .facts, .spot-list';
+var STAGGER = '.pfacts, .points, .faq, .chips, .reviews, .score-row, .cards, .bento, .guide-grid, .facts, .spot-list';
 if ('IntersectionObserver' in window && !reduceMotion) {
 var io = new IntersectionObserver(function (entries) {
 entries.forEach(function (en) {
@@ -574,31 +565,7 @@ if (es[0].isIntersecting) { m.classList.add('drawn'); pio.disconnect(); }
 pio.observe(m);
 });
 var finePointer = window.matchMedia && window.matchMedia('(hover: hover) and (pointer: fine)').matches;
-$$('[data-tilt]').forEach(function (stage) {
-if (reduceMotion || !finePointer) return;
-var raf = 0, ev = null;
-function apply() {
-raf = 0;
-var r = stage.getBoundingClientRect();
-var x = Math.max(-0.5, Math.min(0.5, (ev.clientX - r.left) / r.width - 0.5));
-var y = Math.max(-0.5, Math.min(0.5, (ev.clientY - r.top) / r.height - 0.5));
-stage.style.setProperty('--ry', (x * 12).toFixed(2) + 'deg');
-stage.style.setProperty('--rx', (-y * 9).toFixed(2) + 'deg');
-stage.style.setProperty('--mx', ((x + 0.5) * 100).toFixed(1) + '%');
-stage.style.setProperty('--my', ((y + 0.5) * 100).toFixed(1) + '%');
-stage.style.setProperty('--px', (x * 2).toFixed(3));
-stage.style.setProperty('--py', (y * 2).toFixed(3));
-}
-var zone = stage.closest('.hero-v') || stage;
-zone.addEventListener('pointermove', function (e) { ev = e; stage.classList.add('is-tilting'); if (!raf) raf = requestAnimationFrame(apply); });
-zone.addEventListener('pointerleave', function () {
-stage.classList.remove('is-tilting');
-['--rx', '--ry', '--px', '--py'].forEach(function (k) { stage.style.removeProperty(k); });
-});
-});
 var plx = reduceMotion ? [] : $$('.cta-media, .hero.page .hero-media');
-var timelines = $$('.timeline');
-if (reduceMotion) timelines.forEach(function (tl) { tl.style.setProperty('--p', '1'); });
 var inner = reduceMotion ? [] : $$('.bento .media, .cards .card > .media, .split .media').filter(function (m) { return !m.closest('.map-figure'); });
 inner.forEach(function (m) { m.classList.add('plx-in'); });
 var heroV = reduceMotion ? null : $('.hero-v'), heroHS = -1;
@@ -640,10 +607,9 @@ if (!ticking) { ticking = true; requestAnimationFrame(onFrame); }
 plx.forEach(function (el) { el.nearBox = el.parentElement; nio.observe(el.parentElement); });
 inner.forEach(function (m) { nio.observe(m); });
 lits.forEach(function (l) { nio.observe(l.el); });
-timelines.forEach(function (tl) { nio.observe(tl); });
 } else {
 plx.forEach(function (el) { el.nearBox = el.parentElement; near.add(el.parentElement); });
-inner.concat(lits.map(function (l) { return l.el; }), timelines).forEach(function (el) { near.add(el); });
+inner.concat(lits.map(function (l) { return l.el; })).forEach(function (el) { near.add(el); });
 }
 var heroH = heroV ? heroV.offsetHeight : 0;
 window.addEventListener('resize', function () { heroH = heroV ? heroV.offsetHeight : 0; }, { passive: true });
@@ -653,9 +619,6 @@ var vh = window.innerHeight, y = window.scrollY;
 var plxR = plx.filter(function (el) { return near.has(el.nearBox); }).map(function (el) { return [el, el.nearBox.getBoundingClientRect()]; });
 var innerR = inner.filter(function (m) { return near.has(m); }).map(function (m) { return [m, m.getBoundingClientRect()]; });
 var litR = lits.filter(function (l) { return near.has(l.el); }).map(function (l) { return [l, l.el.getBoundingClientRect()]; });
-var tlR = timelines.filter(function (tl) { return near.has(tl); }).map(function (tl) {
-return [tl, tl.getBoundingClientRect(), Array.prototype.map.call(tl.children, function (li) { return [li, li.getBoundingClientRect().top]; })];
-});
 plxR.forEach(function (s) {
 var r = s[1], p = (r.top + r.height / 2 - vh / 2) / (vh / 2 + r.height / 2);
 s[0].style.transform = 'translate3d(0,' + (-p * 6).toFixed(2) + '%,0)';
@@ -678,11 +641,6 @@ if (y > 520 && y > lastY + 6 && !busy) header.classList.add('is-hidden');
 else if (y < lastY - 6 || y <= 520) header.classList.remove('is-hidden');
 doc.classList.toggle('hdr-hidden', header.classList.contains('is-hidden'));
 }
-tlR.forEach(function (s) {
-var tl = s[0], r = s[1], p = Math.max(0, Math.min(1, (vh * 0.62 - r.top) / r.height));
-tl.style.setProperty('--p', p.toFixed(3));
-s[2].forEach(function (c) { c[0].classList.toggle('passed', c[1] + 30 < vh * 0.62); });
-});
 lastY = y;
 }
 window.addEventListener('scroll', function () { if (!ticking) { ticking = true; requestAnimationFrame(onFrame); } }, { passive: true });
@@ -717,7 +675,7 @@ document.addEventListener('touchstart', function (e) { go(link(e)); }, { passive
 document.addEventListener('focusin', function (e) { go(link(e)); });
 })();
 if (finePointer && !reduceMotion) {
-$$('.escape, .bento > *, .review, .card > .media, .split .media, .moment .media').forEach(function (card) {
+$$('.bento > *, .review, .card > .media, .split .media').forEach(function (card) {
 var r = null;
 card.addEventListener('pointerenter', function () { r = card.getBoundingClientRect(); });
 card.addEventListener('pointermove', function (e) {
